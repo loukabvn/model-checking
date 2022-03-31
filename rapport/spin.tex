@@ -1,0 +1,317 @@
+%%% Packages %%%
+
+\documentclass[french]{article}
+\usepackage[margin=3cm]{geometry} 
+\usepackage{fancyhdr, color, graphicx}
+\usepackage[french]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[shortlabels]{enumitem}
+\usepackage{indentfirst}
+\usepackage{hyperref}
+\usepackage{minted}
+\usepackage{titlesec}
+\usepackage{pgfplots}
+\usepackage{caption,subcaption}
+
+%%% Setup and environments %%%
+\setminted{
+    frame=lines,
+    framesep=3mm
+}
+\usemintedstyle{friendly}
+
+\titleformat*{\section}{\LARGE\bfseries}
+%\titleformat*{\subsection}{\large\bfseries}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    pdftitle={Devoir de Model-Checking},
+}
+
+\renewcommand{\footrulewidth}{0.8pt}
+
+\pagestyle{fancy}
+
+%%% Header %%%
+
+\lhead{Louka Boivin}
+\rhead{Devoir de Model-checking} 
+\chead{\textbf{Vérification du tri rapide}}
+\lfoot{Université de Rouen}
+\rfoot{\today}
+
+%%% Main document %%%
+
+\begin{document}
+
+\input{title}%not necessary but looks fancy
+
+\addtocontents{toc}{\large}
+\tableofcontents
+\newpage
+
+\section{Rappel du problème}
+Le tri rapide (\emph{quicksort}) est un algorithme efficace pour trier un tableau de $n$ éléments, avec une compléxité
+moyenne en $O(n\ log(n))$.
+
+Le but de ce projet est de prouver, en utilisant un outil de model-checking, que le tri rapide
+effectue bien c'est qu'il est censé faire, c'est-à-dire trier un tableau. L'outil de model-checking utilisé ici est SPIN qui permet d'implanter un modèle et de tester des propriétés sur ce modèle.
+
+Plus précisement, il faut tout d'abord vérifier avec SPIN que le
+partionnement fait bien ce qu'il est censé faire, c'est-à-dire séparé les éléments du tableau par
+rapport à un pivot, à gauche les éléments inférieurs au pivot, et à droite les éléments supérieurs.
+Et ensuite, vérifié qu'après un appel à quicksort le tableau est trié.\newline
+
+L'algorithme demandé pour implanter le tri rapide est le \textbf{schéma de partition de Lomuto},
+dont le pseudo-code est le suivant :
+\begin{minted}{c}
+// Sorts a (portion of an) array, divides it into partitions, then sorts those
+algorithm quicksort(A, lo, hi) is
+    // If indices are in correct order
+    if lo >= 0 && hi >= 0 && lo < hi then
+        // Partition array and get pivot index
+        p := partition(A, lo, hi)
+        // Sort the two partitions
+        quicksort(A, lo, p - 1) // Left side of pivot
+        quicksort(A, p + 1, hi) // Right side of pivot
+
+// Divides array into two partitions
+algorithm partition(A, lo, hi) is
+    pivot := A[hi] // The pivot must be the last element
+    // Pivot index
+    i := lo - 1
+    for j := lo to hi do
+    // If the current element is less than or equal to the pivot
+    if A[j] <= pivot then
+        // Move the pivot index forward
+        i := i + 1
+        // Swap the current element with the element at the pivot
+        swap A[i] with A[j]
+    return i // the pivot index
+\end{minted}
+\newpage
+
+\section{Implantation du modèle}
+Le modèle est implanté dans le fichier \verb:quicksort.pml:. Il contient plusieurs patrons de
+processus qui sont utilisés ici plutôt comme des fonctions. Ces fonctions sont les suivantes :
+
+\begin{itemize}
+    \item \verb:random_array: : génére un tableau aléatoire pour le trier,
+    \item \verb:print_array: :  affiche un tableau,
+    \item \verb:partition: : effectue le partitionnement du tableau selon le schéma de partition
+        de Lomuto,
+    \item \verb:quicksort: : effectue le tri rapide sur un tableau,
+    \item \verb:check_partition: : vérifie si le partitionnement fonctionne correctement,
+    \item \verb:check_sort: : vérifie si le tri fonctionne correctement.
+\end{itemize}
+
+Ensuite le corps principale du programme est décrit dans la section \verb:init:. Selon les options
+passées à SPIN, le programme effectue simplement un test, ou lance les vérifications des propriétés
+du modèle.
+
+\subsection{Initialisation}
+Pour utiliser les processus comme des fonctions, la plupart des fonctions prennent en paramètre un
+canal de taille 0 afin de synchroniser la fin des processus (sauf les fonctions \verb:check_sort:
+et \verb:check_partition: car elles sont toujours appelées en dernière).
+
+La section \verb:init: permet de lancer les processus voulues selon les macros définis :
+\begin{itemize}
+    \item Dans tous les cas la première étape est de généré un tableau aléatoire de longueur N,
+        et ensuite :
+    \item Si la macro \verb:SHOW_SORT: est défini, le programme va afficher le tableau, le trier
+        puis le ré-afficher.
+    \item Si la macro \verb:VERIFY_PARTITION: est défini, le programme va lancer \verb:partition:
+        entre 0 et N-1 puis \verb:check_partition:.
+    \item Si la macro \verb:VERIFY_SORT: est défini, le programme va lancer \verb:quicksort:
+        puis \verb:check_sort:.
+\end{itemize}
+
+\subsection{Optimisations}
+Pour optimiser la vérification des propriétés sur le modèle, j'ai utilisé différentes techniques :
+\begin{enumerate}
+    \item Pour simplifier le code et éviter de consommer des ressources inutiles, le tableau à
+        partitionner puis trier est global, tous les processus y ont accès.
+
+    \item Comme conseillé dans l'énoncé les types de variables ont été adaptés aux éléments
+        utilisés. Dès que je le pouvais, j'ai utilisé des \verb:unsigned: afin de pouvoir définir
+        le nombre de bits avec lequel ils sont stockés.
+
+    \item L'utilisation de macros pour compiler et utiliser seulement le code nécéssaire à
+        l'objectif demandé.
+
+    \item L'utilisation des fonctions définis par SPIN comme \verb:for: ou \verb:select: pour la
+        simplification du code.
+
+    \item L'option de compilation \verb:-O2: de \verb:gcc: permet de réduire le temps d'exécution
+        de la vérification (d'environ 30\%). Cependant la mémoire utilisé reste la même.
+\end{enumerate}
+\newpage
+
+\subsection{Vérifications}
+Pour effectuer les vérifications demandées, j'ai utilisé les assertions car je trouvais que
+c'était la manière la plus simple de tester. Également les propriétés ne sont pas à vérifier en
+permanence sur l'état du système mais seulement après l'exécution d'un autre processus, raison
+de plus pour utiliser un processus à part avec des assertions.\newline
+
+Les fonctions \verb:check_sort: et \verb:check_partition: font donc cela, elles parcourent le
+tableau et vérifient que le tableau est bien trié ou partitionné à l'aide d'assertions :
+
+Soit $tab$ le tableau à vérifier et $p$ l'indice du pivot :
+\begin{itemize}
+    \item \verb:check_sort: : $\forall i \in (0, ..,  N-2)$ $\rightarrow$ \verb:assert(tab[i] <= tab[i+1]):
+    \item \verb:check_partition : : $\forall i \in (0, ..,  N-1)$ :
+    \begin{itemize}
+        \item si $i < p$ $\rightarrow$ \verb:assert(tab[i] <= tab[pivot]):
+        \item sinon $\rightarrow$ \verb:assert(tab[i] >= tab[pivot]):
+    \end{itemize}
+\end{itemize}
+
+\subsection{Lancement des tests}
+Pour lancer la vérification, il faut donc utiliser les macros définis précédemment de la manière
+suivante :
+\begin{minted}{bash}
+spin -a -D{VERIFY_SORT ou VERIFY_PARTITION} quicksort.pml
+gcc -O2 pan.c -o sort
+./sort
+\end{minted}
+
+Et si l'on veut seulement tester le tri une fois pour un tableau généré aléatoirement :
+\begin{minted}{bash}
+spin -DSHOW_SORT quicksort.pml
+\end{minted}
+
+Afin d'éviter de taper ces commandes à chaque fois un makefile est disponible, dont la notice
+d'utilisation est en annexe (voir section \ref{annexe:notice}).
+
+\newpage
+
+\section{Résultats et conclusions}
+En utilisant le modèle precédemment décrit, j'ai pu vérifier que le partitionnement et le tri
+fonctionnait parfaitement peu importe les valeurs du tableau, jusqu'à une taille de tableau de 7.
+
+\subsection{Évaluation des performances}
+Voici quelques graphiques montrant les performances de la vérification avec SPIN en fonction
+de la taille du tableau et de la propriété à vérifier :
+
+\input{graph}
+
+\emph{À titre indicatif :} ces résultats ont été trouvés en exécutant plusieurs tests sur ma machine
+avec 8Go de RAM, 4Go de swap et un processeur i5 d'une fréquence de 1,6GHz.\newline
+
+On peut tirer plusieurs informations de ces graphiques :
+\begin{enumerate}
+    \item Le test de vérification du partitionnement est toujours légèrement moins lourd en
+        ressources. Cela est sûrement dû au fait que le tri utilise l'algorithme de partitionnement
+        donc l'exécution est plus longue et consomme plus de ressources.
+
+    \item À partir d'un tableau de taille 7, la complexité de la vérification explose autant en
+        mémoire qu'en temps. Pour un tableau de taille 8, je n'ai pas réussi, même apres plusieurs
+        minutes en laissant swapper ma machine, spin ne s'arrête pas.
+\end{enumerate}
+
+\subsection{Difficultés}
+La principale difficulté fut d'implémenter la fonction de partionnement car j'avais mal compris
+le pseudo-code donné dans l'énoncé. Je pensais que la boucle $for$ s'arrêtait à $hi-1$ et donc
+je pensais qu'il manquait un swap après la boucle pour que le partitionnement se fasse
+correctement.\newline
+
+Ensuite, pour faire fonctionner correctement le quicksort il fallait utiliser les canaux SPIN pour
+attendre la fin de l'exécution de certains processus. J'ai eu du mal à comprendre pourquoi
+l'utilisation des canaux était nécéssaires et comment les utiliser pour faire ce que je voulais.
+\newline
+
+Également j'ai eu un problème pour effectuer mes tests, au départ je passais les options de
+compilation (\verb:VERIFY_{SORT,PARTITION}:) à \verb:gcc: comme nous faisions d'habitude, mais cela
+ne marchait pas. En recherchant sur internet j'ai compris que SPIN passé le pré-processeur C
+avant de générer son code et donc que c'était à SPIN directement qu'il fallait passer ces
+paramètres.\newline
+
+Cependant une fois ces quelques difficultés passées le reste fut assez simple, les fonctions de
+vérification n'étant pas très compliqué à écrire et ensuite le reste étant de l'optimisation,
+l'ajout des macros et du Makefile.
+
+\subsection{Question subsidiaire}
+Concernant cette question, j'ai essayé de passer l'exécution du quicksort en mode concurrent.
+
+Pour cela, plutôt que de faire, dans \verb:quicksort: :
+\begin{minted}{c}
+// On lance le premier appel récursif
+run quicksort(c, lo, p - 1); 
+c?_;    // on attend la fin du premier appel
+run quicksort(c, p + 1, hi); // on lance ensuite le deuxième
+c?_;
+\end{minted}
+j'ai changé pour :
+\begin{minted}{c}
+// On lance les 2 appels récursifs à quicksort
+run quicksort(c, lo, p - 1); 
+run quicksort(c, p + 1, hi);
+c?_;    // on attend la fin des deux appels ensuite
+c?_;
+\end{minted}
+
+Avec cette méthode, le tri fonctionne toujours sans problème, cependant, la complexité augmente
+énormément. En effet à partir d'un tableau de taille 6 ma machine ne parvient à finir la 
+vérification du tri.
+
+\begin{figure}[!h]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            title={Mémoire utilisée en fonction de la taille du tableau (avec concurrence)},
+            xlabel={N : taille du tableau},
+            ylabel={Mémoire utilisée (Go)},
+            xmin=1, xmax=6,
+            ymin=0, ymax=8,
+            xtick={2,3,4,5,6},
+            ytick={0,1,2,3,4,5,6,7,8},
+            legend pos=north west,
+            ymajorgrids=true,
+            grid style=dashed,
+        ]
+
+        \addplot[
+            color=blue,
+            mark=square,
+        ]
+        coordinates {
+            (2,0.128)(3,0.128)(4,0.144)(5,1.56)(6,12)
+        };
+        \legend{VERIFY\_SORT}
+    
+        \end{axis}
+    \end{tikzpicture}
+\end{figure}
+
+\newpage
+
+\section{Annexe}
+\subsection{Notice d'utilisation}
+\label{annexe:notice}
+Un makefile permet de lancer la vérification et le test avec SPIN.\newline
+
+Pour tester une fois le tri et afficher le résultat, il suffit de lancer :
+\begin{minted}{bash}
+make test
+\end{minted}
+
+Pour lancer la vérification du tri rapide :
+\begin{minted}{bash}
+make sort
+\end{minted}
+
+Pour lancer la vérification du partitionnement :
+\begin{minted}{bash}
+make partition
+\end{minted}
+
+Et pour nettoyer les fichiers de compilations créés :
+\begin{minted}{bash}
+make clean
+\end{minted}
+
+
+\end{document}
